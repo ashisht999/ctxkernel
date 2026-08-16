@@ -1,0 +1,31 @@
+# Design notes and the visual explainer — thinking, not shipped artifacts.
+ARCHITECTURE.md
+SDK-DESIGN.md
+ctxkernel-explained.html
+
+# Engine output: logs and blobs written at runtime.
+.ctx/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
