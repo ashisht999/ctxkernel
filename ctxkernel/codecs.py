@@ -20,9 +20,14 @@ from .ir import ResourceId
 #: Target ceiling for an extract, in characters (~250 tokens).
 MAX_EXTRACT_CHARS = 1000
 
+#: Ceiling for the names index appended to every extract (~150 tokens).
+MAX_NAMES_CHARS = 600
+
 
 class Codec(Protocol):
     media_type: str
+    #: Optional (default True): whether the registry appends a names index.
+    #: Set False on a codec whose cuts are deliberate rather than for size.
 
     def matches(self, content: str, resource: ResourceId | None, tool_name: str) -> bool: ...
     def extract(self, content: str, resource: ResourceId | None) -> str: ...
@@ -184,6 +189,9 @@ class TestOutputCodec:
     """Keeps failing test names and counts; drops the passing noise."""
 
     media_type = "text/x-test-output"
+    #: What this codec drops, it drops on purpose: an index of the names it cut
+    #: would put 200 passing tests back in front of the one that failed.
+    index_names = False
 
     _PYTEST_SUM = re.compile(r"=+\s*(.*?(?:passed|failed|error).*?)\s*=+\s*$", re.M | re.I)
     _PYTEST_FAIL = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.M)
@@ -335,6 +343,73 @@ class DefaultCodec:
 
 
 # --------------------------------------------------------------------------
+# Names index
+# --------------------------------------------------------------------------
+
+_NAME = re.compile(r"[A-Za-z0-9_./\-]{3,}")
+_FILEISH = re.compile(r"\.[A-Za-z]\w{0,5}$")
+
+
+def name_ranks(text: str) -> dict[str, int]:
+    """Name-shaped tokens in ``text``, in order of first appearance, each with
+    its kind: 0 a path, 1 a file name, 2 an identifier.
+
+    A name is what one piece of history uses to point at another -- a path, a
+    symbol, a setting. Plain words are left out: "error" or "python" appear
+    everywhere and point at nothing. Shared by the names index here and by the
+    graph's mention links, so both agree on what a name is.
+    """
+    seen: dict[str, int] = {}
+    for raw in _NAME.findall(text):
+        t = raw.strip("./-")
+        if len(t) < 3 or t in seen or not any(ch.isalpha() for ch in t):
+            continue
+        if "/" in t:
+            seen[t] = 0
+        elif _FILEISH.search(t):
+            seen[t] = 1
+        elif "_" in t or "." in t or re.search(r"[a-z][A-Z]", t):
+            seen[t] = 2
+    return seen
+
+
+def names_index(content: str, extract: str, limit: int = MAX_NAMES_CHARS) -> str:
+    """The names in ``content`` that ``extract`` does not already show.
+
+    An extract keeps the shape of an output and cuts the middle, and the middle
+    is where a listing keeps its paths: measured on real Claude Code sessions,
+    over half of what an agent went on to use and could no longer see was a
+    name that sat in a handle's blob, most of it long shell output. Without the
+    name the agent cannot even ask for the content, so every extract carries
+    the names it cut. Paths, file names and identifiers take turns, each in
+    order of first appearance, so one long listing of paths cannot crowd out
+    the lone ``README.md`` beside it. When they do not all fit, the index says
+    how many were cut, so the agent knows to ``expand()``. Parsed, like the
+    extract itself.
+    """
+    seen = {t: r for t, r in name_ranks(content).items() if t not in extract}
+    if not seen:
+        return ""
+    groups = [[t for t, r in seen.items() if r == rank] for rank in (0, 1, 2)]
+    out: list[str] = []
+    used = len("names: ")
+    full = False
+    for i in range(max(len(g) for g in groups)):
+        for g in groups:
+            if i >= len(g):
+                continue
+            if used + len(g[i]) + 2 > limit:
+                full = True
+                break
+            out.append(g[i])
+            used += len(g[i]) + 2
+        if full:
+            break
+    more = len(seen) - len(out)
+    return "names: " + ", ".join(out) + (f"  (+{more} more)" if more else "")
+
+
+# --------------------------------------------------------------------------
 # Registry
 # --------------------------------------------------------------------------
 
@@ -364,7 +439,18 @@ class CodecRegistry:
         for c in self._codecs:
             try:
                 if c.matches(content, resource, tool_name):
-                    return c.extract(content, resource), c.media_type
+                    extract = c.extract(content, resource)
+                    if getattr(c, "index_names", True):
+                        extract = _with_names(extract, content)
+                    return extract, c.media_type
             except Exception:
                 continue  # a broken codec must never break the turn
-        return DefaultCodec().extract(content, resource), "text/plain"
+        return _with_names(DefaultCodec().extract(content, resource), content), "text/plain"
+
+
+def _with_names(extract: str, content: str) -> str:
+    try:
+        names = names_index(content, extract)
+    except Exception:
+        return extract  # the index is a bonus; losing it must not lose the extract
+    return f"{extract}\n{names}" if names else extract

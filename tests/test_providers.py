@@ -99,7 +99,10 @@ def test_handle_becomes_a_tool_message_with_expand_hint(eng):
     assert any("expand(" in m["content"] for m in tool_msgs)
 
 
-CORE_MODULES = ("ir", "predicates", "assembler", "codecs", "identity", "store", "tokenizer")
+CORE_MODULES = (
+    "ir", "predicates", "assembler", "codecs", "identity", "store", "tokenizer",
+    "graph", "decision", "tools",
+)
 
 
 def _imported_names(path: str) -> set[str]:

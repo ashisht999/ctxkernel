@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterator
@@ -70,6 +71,29 @@ CREATE TABLE IF NOT EXISTS tasks (
     outcome   TEXT,
     begin_seq INTEGER NOT NULL,
     end_seq   INTEGER
+);
+
+-- Every decision-model run, kept whole: the scores it gave, not only the
+-- anchors it produced. Current anchors are the latest run that did not fall
+-- back; the rest is what makes a model's calibration checkable later.
+CREATE TABLE IF NOT EXISTS anchor_runs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    seq        INTEGER NOT NULL,
+    ts         REAL    NOT NULL,
+    model      TEXT    NOT NULL,
+    ms         REAL    NOT NULL,
+    candidates INTEGER NOT NULL,
+    anchors    TEXT    NOT NULL,
+    scores     TEXT    NOT NULL,
+    fallback   TEXT
+);
+
+-- Small counters the engine must not lose on reopen (how much of a host's
+-- message list is already ingested), so a resumed session neither repeats
+-- ids nor records the same history twice.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -316,6 +340,60 @@ class SessionStore:
                 (status, outcome, end_seq, task_id),
             )
             self._db.commit()
+
+    def task_parents(self) -> dict[str, str | None]:
+        cur = self._db.execute("SELECT id, parent FROM tasks")
+        return {r["id"]: r["parent"] for r in cur}
+
+    # -- meta --------------------------------------------------------------
+
+    def get_meta(self, key: str, default: str | None = None) -> str | None:
+        r = self._db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return r["value"] if r else default
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+            self._db.commit()
+
+    # -- anchors -----------------------------------------------------------
+
+    def record_anchor_run(
+        self,
+        *,
+        seq: int,
+        model: str,
+        ms: float,
+        candidates: int,
+        anchors: list[tuple[str, float]],
+        scores: dict[str, float],
+        fallback: str | None,
+    ) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO anchor_runs (seq, ts, model, ms, candidates, anchors, scores,"
+                " fallback) VALUES (?,?,?,?,?,?,?,?)",
+                (seq, time.time(), model, ms, candidates, json.dumps(anchors),
+                 json.dumps(scores), fallback),
+            )
+            self._db.commit()
+
+    def current_anchors(self) -> list[tuple[str, float]]:
+        r = self._db.execute(
+            "SELECT anchors FROM anchor_runs WHERE fallback IS NULL ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return [tuple(a) for a in json.loads(r["anchors"])] if r else []
+
+    def anchor_runs(self) -> list[dict[str, Any]]:
+        cur = self._db.execute("SELECT * FROM anchor_runs ORDER BY id")
+        return [
+            {**dict(r), "anchors": json.loads(r["anchors"]), "scores": json.loads(r["scores"])}
+            for r in cur
+        ]
 
     def closed_task_ids(self) -> set[str]:
         cur = self._db.execute("SELECT id FROM tasks WHERE status IN ('done','abandoned')")

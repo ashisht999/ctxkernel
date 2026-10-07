@@ -30,6 +30,7 @@ fast = ["xxhash>=3.4"]
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.40"]
 tiktoken = ["tiktoken>=0.7"]
+jev = ["typesafe-sdk"]
 dev = ["pytest>=8.0"]
 
 [tool.hatch.build.targets.wheel]

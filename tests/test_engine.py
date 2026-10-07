@@ -22,8 +22,9 @@ def test_fat_result_is_externalized_not_admitted(engine):
     blk = ev.blocks[0]
     assert isinstance(blk, HandleRef)
     assert blk.original_tokens > engine.handle_threshold
-    # The extract is a parsed outline, orders of magnitude smaller.
-    assert len(blk.extract) < len(BIG) / 20
+    # The extract is a parsed outline (plus the names it had to cut), an order
+    # of magnitude smaller than what it stands in for.
+    assert engine.tok.count_text(blk.extract) * 10 < blk.original_tokens
     assert "function_0" in blk.extract
 
 
@@ -254,3 +255,25 @@ def test_explain_names_a_reason_for_every_event(engine):
     out = engine.explain()
     assert "superseded" in out or "duplicate" in out
     assert "saved" in out
+
+
+def test_a_resumed_session_never_reissues_a_tool_use_id(tmp_path):
+    a = ContextEngine(root=tmp_path, session="s1")
+    a.tool("read_file", {"path": "a.py"}, "x")
+    a.close()
+    b = ContextEngine(root=tmp_path, session="s1")
+    b.tool("read_file", {"path": "b.py"}, "y")
+    ids = [blk.id for ev in b.store.events() for blk in ev.blocks if isinstance(blk, ToolUse)]
+    assert len(ids) == len(set(ids)) == 2
+    b.close()
+
+
+def test_a_resumed_session_does_not_ingest_history_twice(tmp_path):
+    msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    a = ContextEngine(root=tmp_path, session="s1")
+    a.ingest_messages(msgs)
+    a.close()
+    b = ContextEngine(root=tmp_path, session="s1")
+    b.ingest_messages(msgs + [{"role": "user", "content": "next"}])
+    assert b.store.count() == 3
+    b.close()

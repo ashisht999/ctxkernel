@@ -47,6 +47,24 @@ def test_test_output_keeps_failures_drops_passes():
     assert len(extract) < len(out) / 10
 
 
+def test_an_extract_keeps_the_names_it_cut():
+    lines = [f"src/pkg_{i}/module_{i}.py:12: import thing" for i in range(300)]
+    lines.insert(150, "README.md: see docs")  # mid-listing: the slice cuts it
+    lines.insert(151, "plain words only here")
+    listing = "\n".join(lines)
+    extract, media = reg.encode(listing, None, "bash")
+    assert media == "text/plain"
+    names = extract.split("names:")[1]
+    # The head slice keeps the first 8 lines; the index reaches past them...
+    assert "src/pkg_12/module_12.py" in names
+    # ...a long run of paths does not crowd out the lone file beside it...
+    assert "README.md" in names
+    # ...and what still does not fit is counted, not silently lost.
+    assert "more)" in names
+    assert "plain" not in names  # words are not names
+    assert len(extract) < 1_700
+
+
 def test_diff_counts_files_and_lines():
     diff = (
         "diff --git a/src/auth.py b/src/auth.py\n"

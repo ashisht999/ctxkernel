@@ -29,3 +29,6 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+
+# Local agent guidance
+CLAUDE.md

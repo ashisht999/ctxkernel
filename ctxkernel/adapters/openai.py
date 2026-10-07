@@ -141,3 +141,14 @@ def parse_message(msg: Message) -> tuple[str, list[Block]]:
 
 def parse_messages(msgs: list[Message]) -> list[tuple[str, list[Block]]]:
     return [parse_message(m) for m in msgs]
+
+
+def tool_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Neutral tool specs as Chat Completions function tools."""
+    return [
+        {
+            "type": "function",
+            "function": {"name": s["name"], "description": s["description"], "parameters": s["schema"]},
+        }
+        for s in specs
+    ]

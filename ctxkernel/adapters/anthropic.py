@@ -192,3 +192,11 @@ class WrappedClient:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+
+def tool_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Neutral tool specs as Messages API tool definitions."""
+    return [
+        {"name": s["name"], "description": s["description"], "input_schema": s["schema"]}
+        for s in specs
+    ]

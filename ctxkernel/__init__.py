@@ -16,6 +16,7 @@ is a rendering of a database, and that is what makes discarding it safe.
 from . import budgets
 from .assembler import Assembler, Assembly, Budget, Zone
 from .codecs import Codec, CodecRegistry
+from .decision import DecisionModel, NullDecision, ProximityDecision
 from .engine import ContextEngine, TaskFrame
 from .identity import IdentityRegistry, ToolSemantics
 from .ir import (
@@ -63,6 +64,9 @@ __all__ = [
     "decide",
     "Codec",
     "CodecRegistry",
+    "DecisionModel",
+    "NullDecision",
+    "ProximityDecision",
     "IdentityRegistry",
     "ToolSemantics",
     "SessionStore",

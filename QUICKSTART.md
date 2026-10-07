@@ -57,6 +57,38 @@ eng.report()            # {'raw_tokens': 62090, 'assembled_tokens': 599, 'saved_
 
 Run `python try_it.py` in this repo for a worked example on real files.
 
+## Let a decision model choose the context
+
+By default the context keeps the newest exchanges and drops the rest by age.
+Pass a decision model and older history competes on relevance instead:
+
+```python
+from ctxkernel import ContextEngine, ProximityDecision
+from ctxkernel.adapters.decision import JevDecision   # pip install "ctxkernel[jev]"
+
+eng = ContextEngine(decision=ProximityDecision())     # free, local: links + shared names + recency
+eng = ContextEngine(decision=JevDecision())           # Jev judges relevance (TYPESAFE_API_KEY)
+```
+
+The graph finds candidates (files touched, tasks, shared names such as
+`RETRY_LIMIT`); the model ranks them in the background after each tool result,
+and the best fill the context. Outdated material is still removed by rules,
+never by the model. With Jev, failed steps are also recorded automatically as
+pinned failure notes.
+
+## Give the agent its own history tools
+
+```python
+tools = my_tools + eng.tools("anthropic")      # or "openai"
+
+out = eng.run_tool(call.name, call.input)      # ctx_outline / ctx_search / ctx_expand
+if out is None:
+    out = run_my_tool(call)
+```
+
+A ranking can miss. With these tools a miss costs the agent one call instead of
+a wrong decision. See `examples/jev_agent.py` for a complete loop.
+
 ## Worth adding once it's working
 
 **Record dead ends.** The highest value-per-token thing in the system — a few
